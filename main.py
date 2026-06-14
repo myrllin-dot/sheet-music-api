@@ -7,72 +7,9 @@ import tempfile
 
 app = FastAPI()
 
-# 伴奏生成器
-def generate_accompaniment(chords: list[str], time_sig: str) -> tuple[str, str]:
-    # 定義動態的防呆休止符 (確保找不到和弦時，休止符的拍數能完美填滿小節)
-    rest_map = {
-        "4/4": "r1",  # 4拍
-        "3/4": "r2.", # 3拍 (附點二分音符)
-        "2/4": "r2",  # 2拍
-        "6/8": "r2."  # 6個八分音符等同於一個附點二分音符的時間
-    }
-    default_rest = rest_map.get(time_sig, "r1")
-    
-    # 建立二維和弦資料庫
-    chord_db = {
-        "4/4": { # 四分音符分散和弦 (4拍)
-            "C":  {"rh": "c'4 e' g' e'",    "lh": "c,2 g,2"},
-            "F":  {"rh": "f'4 a' c'' a'",   "lh": "f,2 c2"},
-            "G":  {"rh": "g'4 b' d'' b'",   "lh": "g,2 d2"},
-            "Am": {"rh": "a'4 c'' e'' c''", "lh": "a,2 e2"},
-            "Dm": {"rh": "d'4 f' a' f'",    "lh": "d,2 a,2"},
-            "Em": {"rh": "e'4 g' b' g'",    "lh": "e,2 b,2"},
-            "G7": {"rh": "g'4 b' f'' b'",   "lh": "g,2 d2"}
-        },
-        "3/4": { # 華爾滋圓舞曲風格：四分音符上行 (3拍)
-            "C":  {"rh": "c'4 e' g'",       "lh": "c,2."},
-            "F":  {"rh": "f'4 a' c''",      "lh": "f,2."},
-            "G":  {"rh": "g'4 b' d''",      "lh": "g,2."},
-            "Am": {"rh": "a'4 c'' e''",     "lh": "a,2."},
-            "Dm": {"rh": "d'4 f' a'",       "lh": "d,2."},
-            "Em": {"rh": "e'4 g' b'",       "lh": "e,2."},
-            "G7": {"rh": "g'4 b' f''",      "lh": "g,2."}
-        },
-        "2/4": { # 進行曲風格：八分音符滾動 (2拍)
-            "C":  {"rh": "c'8 e' g' e'",    "lh": "c,2"},
-            "F":  {"rh": "f'8 a' c'' a'",   "lh": "f,2"},
-            "G":  {"rh": "g'8 b' d'' b'",   "lh": "g,2"},
-            "Am": {"rh": "a'8 c'' e'' c''", "lh": "a,2"},
-            "Dm": {"rh": "d'8 f' a' f'",    "lh": "d,2"},
-            "Em": {"rh": "e'8 g' b' g'",    "lh": "e,2"},
-            "G7": {"rh": "g'8 b' f'' b'",   "lh": "g,2"}
-        },
-        "6/8": { # 抒情民謠風格：八分音符大跨度琶音 (6個半拍)
-            "C":  {"rh": "c'8 e' g' c'' g' e'", "lh": "c,2."},
-            "F":  {"rh": "f'8 a' c'' f'' c'' a'", "lh": "f,2."},
-            "G":  {"rh": "g'8 b' d'' g'' d'' b'", "lh": "g,2."},
-            "Am": {"rh": "a'8 c'' e'' a'' e'' c''", "lh": "a,2."},
-            "Dm": {"rh": "d'8 f' a' d'' a' f'", "lh": "d,2."},
-            "Em": {"rh": "e'8 g' b' e'' b' g'", "lh": "e,2."},
-            "G7": {"rh": "g'8 b' d'' f'' d'' b'", "lh": "g,2."}
-        }
-    }
-    
-    # 根據目前的拍號取得對應的伴奏表，若遇到未知的拍號，預設使用 4/4 防呆
-    current_db = chord_db.get(time_sig, chord_db["4/4"])
-    
-    rh_notes = []
-    lh_notes = []
-    
-    for chord in chords:
-        # 如果遇到字典裡沒有的和弦，使用預設的休止符來完美填滿小節，避免 LilyPond 報錯
-        mapping = current_db.get(chord, {"rh": default_rest, "lh": default_rest})
-        rh_notes.append(mapping["rh"])
-        lh_notes.append(mapping["lh"])
-        
-    return " ".join(rh_notes), " ".join(lh_notes)
-
-# 1. 定義接收 n8n 傳來的資料格式
+# ==========================================
+# 1. 資料格式定義
+# ==========================================
 class MusicData(BaseModel):
     title: str
     key: str
@@ -83,12 +20,81 @@ class MusicData(BaseModel):
     notes_flute: str = ""
     chords: list[str] = []
 
+# ==========================================
+# 2. 終極和弦字典建造機
+# ==========================================
+def build_chord_db():
+    # 這裡定義了 20+ 種最常用的和弦（大調、小調、屬七）
+    # 格式： "和弦名稱": ("右手音1", "右手音2", "右手音3", "左手根音", "左手五度音")
+    # 注意：使用 LilyPond 絕對音高 (無 ', 有 ', 有 '')
+    base_chords = {
+        "C":   ("c'", "e'", "g'", "c,", "g,"),
+        "Cm":  ("c'", "ees'", "g'", "c,", "g,"),
+        "C#m": ("cis'", "e'", "gis'", "cis,", "gis,"),
+        "Db":  ("des'", "f'", "aes'", "des,", "aes,"),
+        "D":   ("d'", "fis'", "a'", "d,", "a,"),
+        "Dm":  ("d'", "f'", "a'", "d,", "a,"),
+        "Eb":  ("ees'", "g'", "bes'", "ees,", "bes,"),
+        "E":   ("e'", "gis'", "b'", "e,", "b,"),
+        "Em":  ("e'", "g'", "b'", "e,", "b,"),
+        "F":   ("f'", "a'", "c''", "f,", "c"),
+        "Fm":  ("f'", "aes'", "c''", "f,", "c"),
+        "F#m": ("fis'", "a'", "cis''", "fis,", "cis"),
+        "G":   ("g'", "b'", "d''", "g,", "d"),
+        "Gm":  ("g'", "bes'", "d''", "g,", "d"),
+        "G7":  ("g'", "b'", "f''", "g,", "d"),
+        "Ab":  ("aes'", "c''", "ees''", "aes,", "ees"),
+        "A":   ("a'", "cis''", "e''", "a,", "e"),
+        "Am":  ("a'", "c''", "e''", "a,", "e"),
+        "A7":  ("a'", "cis''", "g''", "a,", "e"),
+        "Bb":  ("bes'", "d''", "f''", "bes,", "f"),
+        "B":   ("b'", "dis''", "fis''", "b,", "fis"),
+        "Bm":  ("b'", "d''", "fis''", "b,", "fis"),
+    }
+    
+    db = {"4/4": {}, "3/4": {}, "2/4": {}, "6/8": {}}
+    
+    # 自動根據上述基礎音符，展開成四種節奏的伴奏！
+    for chord, (r1, r2, r3, l1, l2) in base_chords.items():
+        # 4/4 拍: 四分音符琶音 (4拍)
+        db["4/4"][chord] = {"rh": f"{r1}4 {r2}4 {r3}4 {r2}4", "lh": f"{l1}2 {l2}2"}
+        # 3/4 拍: 華爾滋上行 (3拍)
+        db["3/4"][chord] = {"rh": f"{r1}4 {r2}4 {r3}4",       "lh": f"{l1}2."}
+        # 2/4 拍: 進行曲八分音符 (2拍)
+        db["2/4"][chord] = {"rh": f"{r1}8 {r2}8 {r3}8 {r2}8", "lh": f"{l1}2"}
+        # 6/8 拍: 搖籃曲六連音 (6個八分音符 = 附點二分音符)
+        db["6/8"][chord] = {"rh": f"{r1}8 {r2}8 {r3}8 {r3}8 {r2}8 {r1}8", "lh": f"{l1}2."}
+        
+    return db
+
+# 初始化全域字典
+CHORD_DB = build_chord_db()
+
+# ==========================================
+# 3. 伴奏生成器
+# ==========================================
+def generate_accompaniment(chords: list[str], time_sig: str) -> tuple[str, str]:
+    # 防呆休止符 (確保找不到和弦時不報錯)
+    rest_map = {"4/4": "r1", "3/4": "r2.", "2/4": "r2", "6/8": "r2."}
+    default_rest = rest_map.get(time_sig, "r1")
+    current_db = CHORD_DB.get(time_sig, CHORD_DB["4/4"])
+    
+    rh_notes, lh_notes = [], []
+    for chord in chords:
+        mapping = current_db.get(chord, {"rh": default_rest, "lh": default_rest})
+        rh_notes.append(mapping["rh"])
+        lh_notes.append(mapping["lh"])
+        
+    return " ".join(rh_notes), " ".join(lh_notes)
+
+# ==========================================
+# 4. 核心 API 路由
+# ==========================================
 @app.post("/generate_pdf")
 def generate_pdf(data: MusicData):
     
-    # 2. 根據不同的 score_type，切換不同的 LilyPond 語法模板
+    # --- 根據 score_type 切換排版 ---
     if data.score_type == "solo":
-        # 單行樂譜 (長笛獨奏)
         lilypond_code = f"""
         \\version "2.22.1"
         \\header {{ title = "{data.title}" subtitle = "Flute Solo" }}
@@ -104,7 +110,7 @@ def generate_pdf(data: MusicData):
         """
         
     elif data.score_type == "piano":
-        # 新增傳入 data.time_signature 讓 Python 知道現在是幾分之幾拍
+        # 呼叫伴奏生成器，傳入和弦與拍號
         rh_music, lh_music = generate_accompaniment(data.chords, data.time_signature)
         
         lilypond_code = f"""
@@ -122,13 +128,11 @@ def generate_pdf(data: MusicData):
               \\new Staff {{ 
                 \\key {data.key.lower()} \\major
                 \\time {data.time_signature}
-                % 塞入自動生成的右手伴奏
                 {rh_music}
               }}
               \\new Staff {{ \\clef bass 
                 \\key {data.key.lower()} \\major
                 \\time {data.time_signature}
-                % 塞入自動生成的左手伴奏
                 {lh_music}
               }}
             >>
@@ -138,7 +142,6 @@ def generate_pdf(data: MusicData):
         """
 
     elif data.score_type == "ensemble":
-        # 長笛重奏 (動態生成對應數量的五線譜)
         staffs = ""
         for i in range(1, data.parts + 1):
             staffs += f"""
@@ -161,7 +164,6 @@ def generate_pdf(data: MusicData):
         """
         
     elif data.score_type == "beatbox":
-        # 長笛 Beatbox (更換符頭為叉叉)
         lilypond_code = f"""
         \\version "2.22.1"
         \\header {{ title = "{data.title}" subtitle = "Beatbox Flute" }}
@@ -178,7 +180,6 @@ def generate_pdf(data: MusicData):
         """
         
     else:
-        # 防呆預設處理 (當作獨奏處理)
         lilypond_code = f"""
         \\version "2.22.1"
         \\header {{ title = "{data.title}" }}
@@ -192,29 +193,22 @@ def generate_pdf(data: MusicData):
         }}
         """
 
-    # 3. 建立暫存資料夾並執行 LilyPond 編譯
+    # --- 執行 LilyPond 編譯 ---
     with tempfile.TemporaryDirectory() as temp_dir:
         ly_file_path = os.path.join(temp_dir, "score.ly")
-        
-        # 寫入 .ly 檔案
         with open(ly_file_path, "w", encoding="utf-8") as f:
             f.write(lilypond_code)
             
         try:
-            # 呼叫系統的 LilyPond 指令
             subprocess.run(
                 ["lilypond", "--output", os.path.join(temp_dir, "score"), ly_file_path], 
                 check=True, capture_output=True
             )
-            
-            # 讀取產生出來的 PDF 檔案
             pdf_file_path = os.path.join(temp_dir, "score.pdf")
             with open(pdf_file_path, "rb") as pdf_file:
                 pdf_bytes = pdf_file.read()
                 
-            # 將 PDF 轉換成 Base64 格式並回傳給 n8n
             return {"status": "success", "pdf_base64": base64.b64encode(pdf_bytes).decode('utf-8')}
             
         except subprocess.CalledProcessError as e:
-            # 如果編譯失敗，回傳 LilyPond 的錯誤提示
             raise HTTPException(status_code=500, detail=f"LilyPond error: {e.stderr.decode()}")
