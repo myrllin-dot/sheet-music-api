@@ -14,5 +14,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 複製所有程式碼到容器內
 COPY . .
 
-# 啟動 FastAPI 伺服器
+# 啟動 FastAPI 伺服器 (使用動態 Port 設定)
 CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
