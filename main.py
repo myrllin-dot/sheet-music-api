@@ -5,6 +5,9 @@ import base64
 import os
 import tempfile
 
+# ==========================================
+# 🚨 關鍵啟動指令：這行絕對不能漏掉！
+# ==========================================
 app = FastAPI()
 
 # ==========================================
@@ -24,9 +27,6 @@ class MusicData(BaseModel):
 # 2. 終極和弦字典建造機
 # ==========================================
 def build_chord_db():
-    # 這裡定義了 20+ 種最常用的和弦（大調、小調、屬七）
-    # 格式： "和弦名稱": ("右手音1", "右手音2", "右手音3", "左手根音", "左手五度音")
-    # 注意：使用 LilyPond 絕對音高 (無 ', 有 ', 有 '')
     base_chords = {
         "C":   ("c'", "e'", "g'", "c,", "g,"),
         "Cm":  ("c'", "ees'", "g'", "c,", "g,"),
@@ -54,15 +54,10 @@ def build_chord_db():
     
     db = {"4/4": {}, "3/4": {}, "2/4": {}, "6/8": {}}
     
-    # 自動根據上述基礎音符，展開成四種節奏的伴奏！
     for chord, (r1, r2, r3, l1, l2) in base_chords.items():
-        # 4/4 拍: 四分音符琶音 (4拍)
         db["4/4"][chord] = {"rh": f"{r1}4 {r2}4 {r3}4 {r2}4", "lh": f"{l1}2 {l2}2"}
-        # 3/4 拍: 華爾滋上行 (3拍)
         db["3/4"][chord] = {"rh": f"{r1}4 {r2}4 {r3}4",       "lh": f"{l1}2."}
-        # 2/4 拍: 進行曲八分音符 (2拍)
         db["2/4"][chord] = {"rh": f"{r1}8 {r2}8 {r3}8 {r2}8", "lh": f"{l1}2"}
-        # 6/8 拍: 搖籃曲六連音 (6個八分音符 = 附點二分音符)
         db["6/8"][chord] = {"rh": f"{r1}8 {r2}8 {r3}8 {r3}8 {r2}8 {r1}8", "lh": f"{l1}2."}
         
     return db
@@ -74,7 +69,6 @@ CHORD_DB = build_chord_db()
 # 3. 伴奏生成器
 # ==========================================
 def generate_accompaniment(chords: list[str], time_sig: str) -> tuple[str, str]:
-    # 防呆休止符 (確保找不到和弦時不報錯)
     rest_map = {"4/4": "r1", "3/4": "r2.", "2/4": "r2", "6/8": "r2."}
     default_rest = rest_map.get(time_sig, "r1")
     current_db = CHORD_DB.get(time_sig, CHORD_DB["4/4"])
@@ -110,9 +104,7 @@ def generate_pdf(data: MusicData):
         """
         
     elif data.score_type == "piano":
-        # 呼叫伴奏生成器，傳入和弦與拍號
         rh_music, lh_music = generate_accompaniment(data.chords, data.time_signature)
-        
         lilypond_code = f"""
         \\version "2.22.1"
         \\header {{ title = "{data.title}" subtitle = "Flute & Piano" }}
