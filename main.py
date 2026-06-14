@@ -7,6 +7,71 @@ import tempfile
 
 app = FastAPI()
 
+# 伴奏生成器
+def generate_accompaniment(chords: list[str], time_sig: str) -> tuple[str, str]:
+    # 定義動態的防呆休止符 (確保找不到和弦時，休止符的拍數能完美填滿小節)
+    rest_map = {
+        "4/4": "r1",  # 4拍
+        "3/4": "r2.", # 3拍 (附點二分音符)
+        "2/4": "r2",  # 2拍
+        "6/8": "r2."  # 6個八分音符等同於一個附點二分音符的時間
+    }
+    default_rest = rest_map.get(time_sig, "r1")
+    
+    # 建立二維和弦資料庫
+    chord_db = {
+        "4/4": { # 四分音符分散和弦 (4拍)
+            "C":  {"rh": "c'4 e' g' e'",    "lh": "c,2 g,2"},
+            "F":  {"rh": "f'4 a' c'' a'",   "lh": "f,2 c2"},
+            "G":  {"rh": "g'4 b' d'' b'",   "lh": "g,2 d2"},
+            "Am": {"rh": "a'4 c'' e'' c''", "lh": "a,2 e2"},
+            "Dm": {"rh": "d'4 f' a' f'",    "lh": "d,2 a,2"},
+            "Em": {"rh": "e'4 g' b' g'",    "lh": "e,2 b,2"},
+            "G7": {"rh": "g'4 b' f'' b'",   "lh": "g,2 d2"}
+        },
+        "3/4": { # 華爾滋圓舞曲風格：四分音符上行 (3拍)
+            "C":  {"rh": "c'4 e' g'",       "lh": "c,2."},
+            "F":  {"rh": "f'4 a' c''",      "lh": "f,2."},
+            "G":  {"rh": "g'4 b' d''",      "lh": "g,2."},
+            "Am": {"rh": "a'4 c'' e''",     "lh": "a,2."},
+            "Dm": {"rh": "d'4 f' a'",       "lh": "d,2."},
+            "Em": {"rh": "e'4 g' b'",       "lh": "e,2."},
+            "G7": {"rh": "g'4 b' f''",      "lh": "g,2."}
+        },
+        "2/4": { # 進行曲風格：八分音符滾動 (2拍)
+            "C":  {"rh": "c'8 e' g' e'",    "lh": "c,2"},
+            "F":  {"rh": "f'8 a' c'' a'",   "lh": "f,2"},
+            "G":  {"rh": "g'8 b' d'' b'",   "lh": "g,2"},
+            "Am": {"rh": "a'8 c'' e'' c''", "lh": "a,2"},
+            "Dm": {"rh": "d'8 f' a' f'",    "lh": "d,2"},
+            "Em": {"rh": "e'8 g' b' g'",    "lh": "e,2"},
+            "G7": {"rh": "g'8 b' f'' b'",   "lh": "g,2"}
+        },
+        "6/8": { # 抒情民謠風格：八分音符大跨度琶音 (6個半拍)
+            "C":  {"rh": "c'8 e' g' c'' g' e'", "lh": "c,2."},
+            "F":  {"rh": "f'8 a' c'' f'' c'' a'", "lh": "f,2."},
+            "G":  {"rh": "g'8 b' d'' g'' d'' b'", "lh": "g,2."},
+            "Am": {"rh": "a'8 c'' e'' a'' e'' c''", "lh": "a,2."},
+            "Dm": {"rh": "d'8 f' a' d'' a' f'", "lh": "d,2."},
+            "Em": {"rh": "e'8 g' b' e'' b' g'", "lh": "e,2."},
+            "G7": {"rh": "g'8 b' d'' f'' d'' b'", "lh": "g,2."}
+        }
+    }
+    
+    # 根據目前的拍號取得對應的伴奏表，若遇到未知的拍號，預設使用 4/4 防呆
+    current_db = chord_db.get(time_sig, chord_db["4/4"])
+    
+    rh_notes = []
+    lh_notes = []
+    
+    for chord in chords:
+        # 如果遇到字典裡沒有的和弦，使用預設的休止符來完美填滿小節，避免 LilyPond 報錯
+        mapping = current_db.get(chord, {"rh": default_rest, "lh": default_rest})
+        rh_notes.append(mapping["rh"])
+        lh_notes.append(mapping["lh"])
+        
+    return " ".join(rh_notes), " ".join(lh_notes)
+
 # 1. 定義接收 n8n 傳來的資料格式
 class MusicData(BaseModel):
     title: str
@@ -39,7 +104,9 @@ def generate_pdf(data: MusicData):
         """
         
     elif data.score_type == "piano":
-        # 長笛 + 鋼琴 (需要大譜表 PianoStaff)
+        # 新增傳入 data.time_signature 讓 Python 知道現在是幾分之幾拍
+        rh_music, lh_music = generate_accompaniment(data.chords, data.time_signature)
+        
         lilypond_code = f"""
         \\version "2.22.1"
         \\header {{ title = "{data.title}" subtitle = "Flute & Piano" }}
@@ -52,15 +119,17 @@ def generate_pdf(data: MusicData):
               {data.notes_flute} 
             }}
             \\new PianoStaff \\with {{ instrumentName = "Piano" }} <<
-              \\new Staff {{ % 鋼琴右手預留區塊
+              \\new Staff {{ 
                 \\key {data.key.lower()} \\major
                 \\time {data.time_signature}
-                r1
+                % 塞入自動生成的右手伴奏
+                {rh_music}
               }}
-              \\new Staff {{ \\clef bass % 鋼琴左手預留區塊
+              \\new Staff {{ \\clef bass 
                 \\key {data.key.lower()} \\major
                 \\time {data.time_signature}
-                r1
+                % 塞入自動生成的左手伴奏
+                {lh_music}
               }}
             >>
           >>
