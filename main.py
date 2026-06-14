@@ -1,78 +1,5 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-
-from pydantic import BaseModel
-
-# 1. 更新資料格式，接收新參數
-class MusicData(BaseModel):
-    title: str
-    key: str
-    time_signature: str
-    tempo: int
-    score_type: str  # 例如: "solo", "piano", "ensemble", "beatbox"
-    parts: int       # 聲部數量
-    notes: str = "c4 d e f" # 先暫代音符
-
-@app.post("/generate_pdf")
-def generate_pdf(data: MusicData):
-    
-    # 2. 根據不同的 score_type，給予不同的 LilyPond 模板
-    if data.score_type == "solo":
-        # 單行樂譜 (長笛獨奏)
-        lilypond_code = f"""
-        \\version "2.22.1"
-        \\header {{ title = "{data.title}" }}
-        \\score {{
-          \\new Staff {{
-            \\key {data.key.lower()} \\major
-            \\time {data.time_signature}
-            {data.notes}
-          }}
-        }}
-        """
-        
-    elif data.score_type == "piano":
-        # 長笛 + 鋼琴 (需要大譜表 PianoStaff)
-        lilypond_code = f"""
-        \\version "2.22.1"
-        \\header {{ title = "{data.title}" }}
-        \\score {{
-          <<
-            \\new Staff \\with {{ instrumentName = "Flute" }} {{ 
-              % 長笛音符
-              {data.notes} 
-            }}
-            \\new PianoStaff \\with {{ instrumentName = "Piano" }} <<
-              \\new Staff {{ % 鋼琴右手 
-                 c'4 e' g' c'' 
-              }}
-              \\new Staff {{ \\clef bass % 鋼琴左手 
-                 c2 g2 
-              }}
-            >>
-          >>
-        }}
-        """
-        
-    elif data.score_type == "beatbox":
-        # 長笛 Beatbox (需要更換符頭為叉叉)
-        lilypond_code = f"""
-        \\version "2.22.1"
-        \\header {{ title = "{data.title}" }}
-        \\score {{
-          \\new Staff {{
-            \\override NoteHead.style = #'cross  % 將符頭改成打擊樂的叉叉
-            {data.notes}
-          }}
-        }}
-        """
-        
-    else:
-        # 預設處理
-        pass 
-
-    # ...(後面接續原本寫好的寫入檔案與編譯 PDF 程式碼)...
-
 import subprocess
 import base64
 import os
@@ -80,51 +7,145 @@ import tempfile
 
 app = FastAPI()
 
-# 定義 n8n 傳過來的資料格式
+# 1. 定義接收 n8n 傳來的資料格式
 class MusicData(BaseModel):
     title: str
     key: str
     time_signature: str
     tempo: int
-    # 這裡先預留音符欄位，稍後你可以決定怎麼傳進來
-    notes: str = "c4 d e f | g1" 
+    score_type: str
+    parts: int
+    notes_flute: str = ""
+    chords: list[str] = []
 
 @app.post("/generate_pdf")
 def generate_pdf(data: MusicData):
-    # 組合 LilyPond 語法
-    lilypond_code = f"""
-    \\version "2.22.1"
-    \\header {{ title = "{data.title}" }}
-    \\score {{
-      \\relative c' {{
-        \\key {data.key.lower()} \\major
-        \\time {data.time_signature}
-        \\tempo 4 = {data.tempo}
-        {data.notes}
-      }}
-      \\layout {{ }}
-    }}
-    """
     
+    # 2. 根據不同的 score_type，切換不同的 LilyPond 語法模板
+    if data.score_type == "solo":
+        # 單行樂譜 (長笛獨奏)
+        lilypond_code = f"""
+        \\version "2.22.1"
+        \\header {{ title = "{data.title}" subtitle = "Flute Solo" }}
+        \\score {{
+          \\new Staff \\with {{ instrumentName = "Flute" }} {{
+            \\key {data.key.lower()} \\major
+            \\time {data.time_signature}
+            \\tempo 4 = {data.tempo}
+            {data.notes_flute}
+          }}
+          \\layout {{ }}
+        }}
+        """
+        
+    elif data.score_type == "piano":
+        # 長笛 + 鋼琴 (需要大譜表 PianoStaff)
+        lilypond_code = f"""
+        \\version "2.22.1"
+        \\header {{ title = "{data.title}" subtitle = "Flute & Piano" }}
+        \\score {{
+          <<
+            \\new Staff \\with {{ instrumentName = "Flute" }} {{ 
+              \\key {data.key.lower()} \\major
+              \\time {data.time_signature}
+              \\tempo 4 = {data.tempo}
+              {data.notes_flute} 
+            }}
+            \\new PianoStaff \\with {{ instrumentName = "Piano" }} <<
+              \\new Staff {{ % 鋼琴右手預留區塊
+                \\key {data.key.lower()} \\major
+                \\time {data.time_signature}
+                r1
+              }}
+              \\new Staff {{ \\clef bass % 鋼琴左手預留區塊
+                \\key {data.key.lower()} \\major
+                \\time {data.time_signature}
+                r1
+              }}
+            >>
+          >>
+          \\layout {{ }}
+        }}
+        """
+
+    elif data.score_type == "ensemble":
+        # 長笛重奏 (動態生成對應數量的五線譜)
+        staffs = ""
+        for i in range(1, data.parts + 1):
+            staffs += f"""
+            \\new Staff \\with {{ instrumentName = "Flute {i}" }} {{
+              \\key {data.key.lower()} \\major
+              \\time {data.time_signature}
+              \\tempo 4 = {data.tempo}
+              {data.notes_flute} 
+            }}
+            """
+        lilypond_code = f"""
+        \\version "2.22.1"
+        \\header {{ title = "{data.title}" subtitle = "Flute Ensemble ({data.parts} parts)" }}
+        \\score {{
+          <<
+            {staffs}
+          >>
+          \\layout {{ }}
+        }}
+        """
+        
+    elif data.score_type == "beatbox":
+        # 長笛 Beatbox (更換符頭為叉叉)
+        lilypond_code = f"""
+        \\version "2.22.1"
+        \\header {{ title = "{data.title}" subtitle = "Beatbox Flute" }}
+        \\score {{
+          \\new Staff \\with {{ instrumentName = "Flute (B.B.)" }} {{
+            \\key {data.key.lower()} \\major
+            \\time {data.time_signature}
+            \\tempo 4 = {data.tempo}
+            \\override NoteHead.style = #'cross
+            {data.notes_flute}
+          }}
+          \\layout {{ }}
+        }}
+        """
+        
+    else:
+        # 防呆預設處理 (當作獨奏處理)
+        lilypond_code = f"""
+        \\version "2.22.1"
+        \\header {{ title = "{data.title}" }}
+        \\score {{
+          \\new Staff {{ 
+            \\key {data.key.lower()} \\major
+            \\time {data.time_signature}
+            \\tempo 4 = {data.tempo}
+            {data.notes_flute} 
+          }}
+        }}
+        """
+
+    # 3. 建立暫存資料夾並執行 LilyPond 編譯
     with tempfile.TemporaryDirectory() as temp_dir:
         ly_file_path = os.path.join(temp_dir, "score.ly")
+        
+        # 寫入 .ly 檔案
         with open(ly_file_path, "w", encoding="utf-8") as f:
             f.write(lilypond_code)
             
         try:
-            # 執行 LilyPond
+            # 呼叫系統的 LilyPond 指令
             subprocess.run(
                 ["lilypond", "--output", os.path.join(temp_dir, "score"), ly_file_path], 
                 check=True, capture_output=True
             )
             
+            # 讀取產生出來的 PDF 檔案
             pdf_file_path = os.path.join(temp_dir, "score.pdf")
             with open(pdf_file_path, "rb") as pdf_file:
                 pdf_bytes = pdf_file.read()
                 
-            # 回傳 Base64 格式
+            # 將 PDF 轉換成 Base64 格式並回傳給 n8n
             return {"status": "success", "pdf_base64": base64.b64encode(pdf_bytes).decode('utf-8')}
             
         except subprocess.CalledProcessError as e:
-            # 如果編譯失敗，回傳錯誤訊息
+            # 如果編譯失敗，回傳 LilyPond 的錯誤提示
             raise HTTPException(status_code=500, detail=f"LilyPond error: {e.stderr.decode()}")
