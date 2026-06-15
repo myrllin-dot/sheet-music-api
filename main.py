@@ -87,9 +87,8 @@ def generate_accompaniment(chords: list[str], time_sig: str) -> tuple[str, str]:
 @app.post("/generate_pdf")
 def generate_pdf(data: MusicData):
     
-    # --- 共通的版權與編曲者設定 ---
     arranger_text = "Arr. 鄭宇泰 Myrllin Cheng"
-    copyright_text = "長笛玩家工作室 Flute Gamer Studio" # 改為 copyright
+    copyright_text = "長笛玩家工作室 Flute Gamer Studio"
     
     # --- 根據 score_type 切換排版 ---
     if data.score_type == "solo":
@@ -99,12 +98,12 @@ def generate_pdf(data: MusicData):
           title = "{data.title}" 
           subtitle = "Flute Solo" 
           arranger = "{arranger_text}"
-          copyright = "{copyright_text}"  % 顯示在第一頁正下方
-          tagline = ##f                 % 徹底關閉 LilyPond 預設浮水印
+          copyright = "{copyright_text}"
+          tagline = ##f
         }}
         \\score {{
           \\new Staff \\with {{ instrumentName = "Flute" }} {{
-            \\key {data.key.lower()} \\major
+            \\key {data.key.lower()}
             \\time {data.time_signature}
             \\tempo 4 = {data.tempo}
             {data.notes_flute}
@@ -121,24 +120,25 @@ def generate_pdf(data: MusicData):
           title = "{data.title}" 
           subtitle = "Flute & Piano" 
           arranger = "{arranger_text}"
-          tagline = "{tagline_text}"
+          copyright = "{copyright_text}"
+          tagline = ##f
         }}
         \\score {{
           <<
             \\new Staff \\with {{ instrumentName = "Flute" }} {{ 
-              \\key {data.key.lower()} \\major
+              \\key {data.key.lower()}
               \\time {data.time_signature}
               \\tempo 4 = {data.tempo}
               {data.notes_flute} 
             }}
             \\new PianoStaff \\with {{ instrumentName = "Piano" }} <<
               \\new Staff {{ 
-                \\key {data.key.lower()} \\major
+                \\key {data.key.lower()}
                 \\time {data.time_signature}
                 {rh_music}
               }}
               \\new Staff {{ \\clef bass 
-                \\key {data.key.lower()} \\major
+                \\key {data.key.lower()}
                 \\time {data.time_signature}
                 {lh_music}
               }}
@@ -153,7 +153,7 @@ def generate_pdf(data: MusicData):
         for i in range(1, data.parts + 1):
             staffs += f"""
             \\new Staff \\with {{ instrumentName = "Flute {i}" }} {{
-              \\key {data.key.lower()} \\major
+              \\key {data.key.lower()}
               \\time {data.time_signature}
               \\tempo 4 = {data.tempo}
               {data.notes_flute} 
@@ -165,7 +165,8 @@ def generate_pdf(data: MusicData):
           title = "{data.title}" 
           subtitle = "Flute Ensemble ({data.parts} parts)" 
           arranger = "{arranger_text}"
-          tagline = "{tagline_text}"
+          copyright = "{copyright_text}"
+          tagline = ##f
         }}
         \\score {{
           <<
@@ -182,11 +183,12 @@ def generate_pdf(data: MusicData):
           title = "{data.title}" 
           subtitle = "Beatbox Flute" 
           arranger = "{arranger_text}"
-          tagline = "{tagline_text}"
+          copyright = "{copyright_text}"
+          tagline = ##f
         }}
         \\score {{
           \\new Staff \\with {{ instrumentName = "Flute (B.B.)" }} {{
-            \\key {data.key.lower()} \\major
+            \\key {data.key.lower()}
             \\time {data.time_signature}
             \\tempo 4 = {data.tempo}
             \\override NoteHead.style = #'cross
@@ -202,11 +204,12 @@ def generate_pdf(data: MusicData):
         \\header {{ 
           title = "{data.title}" 
           arranger = "{arranger_text}"
-          tagline = "{tagline_text}"
+          copyright = "{copyright_text}"
+          tagline = ##f
         }}
         \\score {{
           \\new Staff {{ 
-            \\key {data.key.lower()} \\major
+            \\key {data.key.lower()}
             \\time {data.time_signature}
             \\tempo 4 = {data.tempo}
             {data.notes_flute} 
@@ -214,7 +217,6 @@ def generate_pdf(data: MusicData):
         }}
         """
 
-    # --- 執行 LilyPond 編譯 ---
     with tempfile.TemporaryDirectory() as temp_dir:
         ly_file_path = os.path.join(temp_dir, "score.ly")
         with open(ly_file_path, "w", encoding="utf-8") as f:
