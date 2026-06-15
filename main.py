@@ -87,11 +87,21 @@ def generate_accompaniment(chords: list[str], time_sig: str) -> tuple[str, str]:
 @app.post("/generate_pdf")
 def generate_pdf(data: MusicData):
     
+    # --- 共通的版權與編曲者設定 ---
+    arranger_text = "Arr. 鄭宇泰 Myrllin Cheng"
+    copyright_text = "長笛玩家工作室 Flute Gamer Studio" # 改為 copyright
+    
     # --- 根據 score_type 切換排版 ---
     if data.score_type == "solo":
         lilypond_code = f"""
         \\version "2.22.1"
-        \\header {{ title = "{data.title}" subtitle = "Flute Solo" }}
+        \\header {{ 
+          title = "{data.title}" 
+          subtitle = "Flute Solo" 
+          arranger = "{arranger_text}"
+          copyright = "{copyright_text}"  % 顯示在第一頁正下方
+          tagline = ##f                 % 徹底關閉 LilyPond 預設浮水印
+        }}
         \\score {{
           \\new Staff \\with {{ instrumentName = "Flute" }} {{
             \\key {data.key.lower()} \\major
@@ -107,7 +117,12 @@ def generate_pdf(data: MusicData):
         rh_music, lh_music = generate_accompaniment(data.chords, data.time_signature)
         lilypond_code = f"""
         \\version "2.22.1"
-        \\header {{ title = "{data.title}" subtitle = "Flute & Piano" }}
+        \\header {{ 
+          title = "{data.title}" 
+          subtitle = "Flute & Piano" 
+          arranger = "{arranger_text}"
+          tagline = "{tagline_text}"
+        }}
         \\score {{
           <<
             \\new Staff \\with {{ instrumentName = "Flute" }} {{ 
@@ -146,7 +161,12 @@ def generate_pdf(data: MusicData):
             """
         lilypond_code = f"""
         \\version "2.22.1"
-        \\header {{ title = "{data.title}" subtitle = "Flute Ensemble ({data.parts} parts)" }}
+        \\header {{ 
+          title = "{data.title}" 
+          subtitle = "Flute Ensemble ({data.parts} parts)" 
+          arranger = "{arranger_text}"
+          tagline = "{tagline_text}"
+        }}
         \\score {{
           <<
             {staffs}
@@ -158,7 +178,12 @@ def generate_pdf(data: MusicData):
     elif data.score_type == "beatbox":
         lilypond_code = f"""
         \\version "2.22.1"
-        \\header {{ title = "{data.title}" subtitle = "Beatbox Flute" }}
+        \\header {{ 
+          title = "{data.title}" 
+          subtitle = "Beatbox Flute" 
+          arranger = "{arranger_text}"
+          tagline = "{tagline_text}"
+        }}
         \\score {{
           \\new Staff \\with {{ instrumentName = "Flute (B.B.)" }} {{
             \\key {data.key.lower()} \\major
@@ -174,7 +199,11 @@ def generate_pdf(data: MusicData):
     else:
         lilypond_code = f"""
         \\version "2.22.1"
-        \\header {{ title = "{data.title}" }}
+        \\header {{ 
+          title = "{data.title}" 
+          arranger = "{arranger_text}"
+          tagline = "{tagline_text}"
+        }}
         \\score {{
           \\new Staff {{ 
             \\key {data.key.lower()} \\major
